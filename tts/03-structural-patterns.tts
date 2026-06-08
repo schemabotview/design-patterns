@@ -1,5 +1,125 @@
-Structural patterns.
+Welcome to notebook three of the design patterns track. This notebook covers the second family in the gang of four catalog — the seven structural patterns. Adapter, bridge, composite, decorator, facade, flyweight, and proxy. The recurring theme is composition over inheritance. We work through how each pattern lets you assemble small objects into larger structures, without locking yourself into a rigid class hierarchy.
 
-What is covered.
+The shared theme.
 
-This notebook covers the seven Gang of Four structural patterns — adapter, bridge, composite, decorator, facade, flyweight, and proxy. The recurring theme is composition over inheritance, and we work through how each pattern lets you assemble small objects into larger structures without locking yourself into a rigid class hierarchy.
+All seven structural patterns are answers to the same question. How do you assemble small objects into a larger structure. The naive answer — inheritance — runs out of headroom fast. A class hierarchy grows linearly in the number of variations. Every new behaviour becomes a new subclass. Every new dimension of variation multiplies the subclass count. Composition scales better, because you wire objects together at runtime rather than locking the structure into the class hierarchy at compile time.
+
+Each of the seven patterns picks a different recurring composition shape and names it. Adapter and facade are about interface translation — making one shape usable as another. Bridge and composite are about splitting structure into two dimensions that vary independently. Decorator is about layering behaviour — wrapping an object to add a transparent capability. Flyweight and proxy are about controlling access — sharing objects, or standing in for them.
+
+A useful contrast with the creational family from notebook two. Creational patterns answer the question — who decides which object to build. Structural patterns answer the question — how do the built objects fit together.
+
+Adapter.
+
+The intent is to convert the interface of one class into another that the client expects.
+
+Adapter shows up wherever you need to bridge a shape mismatch. Wrapping a third-party library so it conforms to your domain's interface. Integrating legacy code without rewriting it. Swapping an old ay-pee-eye for a new one without changing every call site in the codebase.
+
+The shape is straightforward. The adapter holds a reference to the adaptee — that is the class with the wrong interface — and implements the target interface, the one the client expects. Calls coming in on the target interface are translated into calls on the adaptee.
+
+Python's take is that duck typing often makes adaptation transparent. If an object has the methods the caller invokes, it works, regardless of its declared type. So an explicit adapter is mostly needed when method names or argument shapes actually differ, not just when the types are nominally different.
+
+Kotlin's take is that extension functions can serve as one-way adapters. You add a method that calls into the existing ay-pee-eye in the right shape, without modifying the underlying class. For more involved translation, where you need to maintain state or rename multiple methods, a wrapper class is the right tool.
+
+The notebook example is a legacy Stripe ay-pee-eye that takes amount-in-cents and a card token, and our application that speaks in transactions with amount-in-dollars and a payment method. The adapter converts dollars to cents, validates the currency, calls into the legacy ay-pee-eye, and pulls the charge id out of the result. The application code only sees the clean transaction interface; the legacy ay-pee-eye is hidden behind the adapter.
+
+Do not use adapter when you control both sides. Change one of them directly. The pattern exists because you do not control one side — usually the third-party library or the legacy ay-pee-eye. And if the interfaces are almost the same and duck typing covers the gap — especially in Python — you can skip the explicit adapter entirely.
+
+Bridge.
+
+The intent is to decouple an abstraction from its implementation so that both can vary independently.
+
+Bridge shows up anywhere you have two orthogonal dimensions of variation, and inheritance would force you into a class explosion. Cross-platform rendering, where shapes vary in one dimension and renderers vary in another. Database access, where queries vary in one dimension and backends in another. Notifications, where messages vary in one dimension and delivery channels in another.
+
+The problem it solves is this. Suppose you have three shapes — circle, square, triangle — and two renderers — vector and raster. With inheritance, you end up with six classes — vector-circle, raster-circle, vector-square, and so on. Add a third renderer and you have nine classes. Bridge splits this into two independent hierarchies. Shapes hold a renderer. Renderers know how to draw primitives. The combinations multiply through composition rather than inheritance. Three shapes plus two renderers becomes five classes, not six. Add a third renderer — six classes, not nine.
+
+The contrast with adapter is important. Adapter fixes an incompatibility at the boundary of code you cannot change. Bridge is a structural choice you make at design time, to avoid a class explosion you can see coming.
+
+Python's take is plain composition. Pass the implementation into the abstraction's constructor. Kotlin's take is the same, often with interface delegation using the by keyword.
+
+Do not use bridge when you do not actually have two dimensions of variation. If shapes only ever render to one target, the renderer parameter is dead weight in every constructor. Reach for bridge when you can see the class explosion coming — when the question "how many subclasses would I need if I did not split this" answers with multiplication.
+
+Composite.
+
+The intent is to compose objects into tree structures, and let clients treat individual objects and compositions of objects uniformly.
+
+Composite shows up in file systems with file and directory. you-eye widget trees with button and panel. Expression trees with literal and operator. Organization charts with employee and manager. Arithmetic abstract syntax trees.
+
+The shape is this. A component interface that both leaves and composites implement. Leaves do the actual work. Composites hold a list of children, where each child is itself a component, and delegate operations down to them. The recursive structure means client code can call total-size on a file, or on a directory holding ten thousand files. Same call, same return type.
+
+Python's take is a base class or protocol with the shared interface, plus a composite class that holds a list of children and forwards calls. Kotlin's take is a sealed interface with leaf and composite subtypes, or a base class with composite holding a list.
+
+The notebook example is a file-system tree. The component is f-s node, with a size method and a render method. The leaf is file, which returns its own size and renders itself as a single line. The composite is directory, which returns the sum of its children's sizes and renders itself plus the rendering of each child indented one level deeper. The recursion is implicit in the data structure — the directory does not need to know whether each child is a file or another directory.
+
+Do not use composite when the structure is not actually recursive. If "groups of things" always contain only single items — no nested groups — you do not need a composite. A list is enough. Composite earns its keep when the tree can be arbitrarily deep, and client code wants to treat one node and a thousand-node subtree identically.
+
+Decorator.
+
+The intent is to attach additional responsibilities to an object dynamically, providing a flexible alternative to subclassing for extending behaviour.
+
+Decorator shows up everywhere wrapping is the right tool. Input-output streams, where buffered, compressed, and encrypted are layers on a raw stream. h-t-t-p middleware chains, where authentication, logging, and rate limiting are layers around the handler. Logging, timing, and caching wrappers on a function or a service. Feature toggles.
+
+The shape is a wrapper that has the same interface as the wrapped object, plus extra behaviour. The wrapper forwards calls to the inner object and adds its own logic before or after. Wrappers can stack — a cached wrapping a logged wrapping a real service. The order of stacking matters and is part of the design.
+
+Python's take is the at-decorator language feature, which literally is this pattern, applied to functions. For object decoration, you write a class that forwards to the wrapped instance and adds behaviour. The standard library has decorator-pattern instances built in — functools wraps, functools cache, and so on.
+
+Kotlin's take is interface delegation with the by keyword, which makes decorators almost free. You delegate every method to a wrapped instance and override only the ones you want to decorate. The compiler generates the forwarding code for you.
+
+The notebook example shows a data source with a fetch method, a slow data source that simulates a network call, a cached data source that decorates with memoization, and a logged data source that decorates with logging. Stacking is the punchline. Logged wrapping cached wrapping slow gives you logging on every call, caching on top of the slow source, and the original implementation underneath. Each decorator is a few lines.
+
+Do not use decorator when the wrapped behaviour is single-purpose and you do not need to stack capabilities. If you only ever add caching, a function with the at-functools-cache decorator is shorter than a class hierarchy. Decorator earns its keep when several capabilities — logging, caching, retries, rate limiting — need to be combinable in any order, at any depth.
+
+Facade.
+
+The intent is to provide a unified, simplified interface to a set of interfaces in a subsystem.
+
+Facade shows up in s-d-k design, where a thin convenience class wraps a complex client library. In service layers, where one method orchestrates four repository calls. In convenience classes like Python's shutil make-archive, which hides the tarfile module, the gzip module, and the file walking inside one call.
+
+The shape is straightforward. The facade is a single class whose methods kick off complex sequences of calls into the subsystem. Clients import the facade and never touch the underlying machinery directly.
+
+The contrast with adapter is important. An adapter exists because the subsystem's interface is wrong. A facade exists because the subsystem's interface is too complex. Adapter changes shape. Facade reduces surface area.
+
+Python's take is a class — or even just a module-level function — that hides the orchestration. Kotlin's take is the same, often with a single class wrapping several injected dependencies.
+
+The notebook example is a video converter facade that hides a codec factory, an audio mixer, and a bitrate reader. The client just calls convert with a source path and a target format. The four classes underneath are not part of the client's mental model.
+
+Do not use facade when the subsystem is already simple. A facade over a one-method ay-pee-eye is just a longer name for the same thing. Facade earns its keep when callers consistently need the same multi-step orchestration, and that orchestration is currently duplicated at every call site.
+
+Flyweight.
+
+The intent is to use sharing to support large numbers of fine-grained objects efficiently.
+
+Flyweight shows up wherever you have huge counts of similar objects. Rendering ten thousand particles in a game, where one shared sprite serves ten thousand positions. Character glyphs in a text editor, where one glyph object per character serves every appearance of that character on screen. Tile maps. Syntax highlighting, where one style object per token type serves every token in the document.
+
+The key distinction is intrinsic state versus extrinsic state. Intrinsic state is shared across all uses of the flyweight — the glyph's shape, the particle's sprite. Extrinsic state is unique per use, and lives outside the flyweight — the glyph's screen position, the particle's velocity. The pattern works only when the shared state dwarfs the per-instance state. If the per-instance state is just as big, sharing buys nothing.
+
+Python's take is a cache — usually a dictionary — of flyweight instances, keyed by the intrinsic state. Adding dunder slots to the class keeps memory tight by avoiding the per-instance dictionary overhead.
+
+Kotlin's take is a companion object cache, or — if the set is small and closed — an enum.
+
+The notebook example is a glyph factory that caches glyph instances by character, font, and size. Rendering the word "look" twice gives you eight characters in the document, but only three distinct glyphs in the cache — l, o, and k. The o is reused four times. Every character in the document holds the same shared glyph reference for its letter.
+
+Do not use flyweight when you have thousands but not millions. The cache overhead may exceed the savings. Modern java virtual machines and c-python are already aggressive about deduplicating short strings and small integers, so a naive flyweight on top of those is often pointless. Profile before reaching for this. Flyweight earns its keep when the intrinsic state is genuinely large — a sprite, a complex glyph, a syntax style — and the duplication count is genuinely huge.
+
+Proxy.
+
+The intent is to provide a surrogate or placeholder for another object to control access to it.
+
+Proxy shows up in lazy loading, where you do not construct an expensive resource until first use. Access control, where you authorize before forwarding. Caching, where you return a memoized result instead of calling through. Remote method invocation, where the proxy lives on the client and the real object lives on the server. Virtual proxies for o-r-m lazy collections, where loading the related rows is deferred until first access.
+
+The gang of four book lists four flavours of proxy. A virtual proxy defers expensive object creation until first use. A protection proxy adds an access-control check before forwarding. A remote proxy represents an object that lives in another process or another machine. A smart reference adds reference counting, locking, or logging on access.
+
+The contrast with decorator is the single most important distinction in the structural family. Decorator adds capabilities to an object that the caller wants. Proxy controls access to an object the caller would otherwise use directly. Same structural shape — wrap an object, forward calls — different intent.
+
+Python's take is dunder get-attr for transparent proxies, or an explicit wrapper class for the four flavours. Kotlin's take is interface delegation with by, with overrides for the access-control logic.
+
+The notebook example shows a lazy image proxy and a protection image proxy. You construct ten lazy image proxies upfront. No disk input-output happens. Only the rendered one actually loads. Then you stack a protection proxy on top of one lazy image, and a guest user trying to render it gets blocked with a permission error.
+
+Do not use proxy when you do not need control over access — only added capability. That is decorator, not proxy. Both wrap an object with the same interface. The distinction is purely about intent. Proxy is also overkill when the wrapped object is cheap to construct and freely accessible. Lazy-loading a small object, or access-controlling a public one, just adds an indirection layer for no benefit.
+
+Picking the right structural pattern.
+
+A short decision guide. I need to make a class with the wrong interface usable through the right one — adapter. I have two dimensions of variation and do not want a class explosion — bridge. I need to treat one thing and a tree of things uniformly — composite. I want to layer behaviour on an object, stackably — decorator. I want one simple entry point to a complicated subsystem — facade. I have huge numbers of similar objects and need to share their shared state — flyweight. I need to control access to another object, whether lazy, protected, remote, or smart — proxy.
+
+Three of these blur into each other and are worth distinguishing one more time. Adapter converts an interface. The wrapped object's shape was wrong. The adapter makes it right. Decorator adds capabilities. The wrapped object's shape is fine. The decorator extends it. Proxy controls access. The wrapped object's shape is fine. The proxy stands in front of it. Same structural pattern in all three cases — wrap an object, forward calls. Three different intents. As always, name the pattern by its intent, not its shape.
+
+Notebook four turns to behavioral patterns, the core five. The five behavioral patterns you will reach for most often in real code. Strategy, observer, command, template method, and iterator. These five carry most of the day-to-day weight in object-oriented codebases, which is why they get their own notebook before we get to the more situational five in notebook five.
