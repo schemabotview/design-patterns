@@ -1,5 +1,119 @@
-Foundations and SOLID principles.
+Welcome to the design patterns track. This is notebook one of seven. Before we get to specific patterns, we need to lay down the vocabulary and the principles that every later notebook will lean on. By the end of this session you will know what a design pattern actually is, you will have a one-line description of all twenty-three Gang of Four patterns, you will understand how Python changes the picture compared to the languages those patterns were originally written for, you will be comfortable with the small slice of you-em-el we use throughout the series, and you will be able to apply the five SOLID principles with worked Python and Kotlin examples for each.
 
-What is covered.
+Let us start with the question that the entire field exists to answer. Why do design patterns exist at all.
 
-This notebook walks through what design patterns are, why the Gang of Four catalog exists, the three pattern families at a high level, the five SOLID principles with examples drawn from object-oriented code, and the UML vocabulary we lean on in later notebooks.
+If you have written real applications in Java, Scala, or Kotlin, you have used design patterns. You may not have called them by name. Every time you passed a comparator to a sort function, you used the strategy pattern. Every time you wrote a for loop over a collection, you used the iterator pattern. Every time you injected a repository into a service through a constructor, you used dependency injection. The patterns are already in your hands. The vocabulary is what is missing.
+
+A design pattern is a name plus an intent. It is shared vocabulary for a recurring design problem and the standard shape engineers reach for to solve it. The vocabulary matters because design discussions otherwise drown in detail. The sentence "we should pass a lambda to invert control of the comparison" and the sentence "use strategy" describe the same idea. The second one is one word. That compression is what lets a team make decisions in minutes rather than hours.
+
+The canonical catalog is the book called Design Patterns, Elements of Reusable Object-Oriented Software, by Gamma, Helm, Johnson, and Vlissides. It was published in nineteen ninety-four and the four authors became known forever as the gang of four. They cataloged twenty-three patterns that kept recurring in see-plus-plus and Smalltalk codebases. Three decades later, with different languages and different frameworks, most of those twenty-three still appear constantly in modern code. The book is dated in its examples but the catalog itself has held up remarkably well.
+
+A useful description of any pattern has four parts. The intent — the design problem the pattern solves, stated in one sentence. The structure — the participating classes and how they relate. The consequences — what the pattern gives you, and what it takes away. And the situations where the pattern adds paperwork without paying for itself. Every pattern we cover in the rest of the series will follow that four-part shape.
+
+The gang of four catalog at a glance.
+
+The twenty-three patterns split into three families. The first family is creational patterns. There are five of them. They are about constructing objects. They decouple the code that uses an object from the code that decides which concrete class to build. The five are singleton, factory method, abstract factory, builder, and prototype. Notebook two covers them in detail.
+
+The second family is structural patterns. There are seven. They are about composing objects into larger structures, and the recurring theme is composition over inheritance. The seven are adapter, bridge, composite, decorator, facade, flyweight, and proxy. Notebook three covers them.
+
+The third family is behavioral patterns. There are eleven. They are about distributing responsibilities between objects. The eleven are chain of responsibility, command, iterator, mediator, memento, observer, state, strategy, template method, and visitor. Notebooks four and five split this family in two because eleven patterns in one notebook is too much to hold in working memory at once.
+
+How Python changes the picture.
+
+The gang of four wrote against see-plus-plus and Smalltalk. Those are languages with rigid type systems and limited support for first-class functions. Several patterns in that book exist primarily as workarounds for what those languages cannot do.
+
+Python is a very different beast. It has first-class functions. It has duck typing. It supports multiple inheritance. It allows dynamic attribute access. A module in Python is effectively a singleton already. The at-decorator syntax is a language feature. The dataclass module gives you value types in one line. Several gang of four patterns largely dissolve into Python language features. Strategy becomes — pass a function. Done. Command becomes a function or a callable object. Template method usually becomes a function that takes other functions as arguments. Iterator is built into the language. Every class with a dunder iter method is an iterator. Singleton dissolves because a Python module already is one. Just put the state at module level. Decorator dissolves because the at-decorator syntax literally is the pattern. Adapter often disappears because duck typing makes adaptation transparent.
+
+This does not mean the patterns are obsolete. The intent vocabulary is still useful. Saying "we use strategy here" still communicates more than "we pass a function". It tells the reader why you pass a function, and which slot the function fills. But the structural ceremony — the abstract base class, the interface declaration, the concrete implementation hierarchy — usually disappears in idiomatic Python.
+
+Kotlin sits in the middle. It has first-class functions, and it has a type system that supports interface and sealed class. Many gang of four patterns in Kotlin live somewhere between the Python collapse and the full see-plus-plus or Java ceremony. A fun interface plus a few small implementations is the common shape.
+
+The throughline for this series is this. Lead with intent. Code in the most idiomatic shape the language allows. And name the pattern explicitly so the vocabulary still works, even when the structure has shrunk to one line.
+
+A short word on you-em-el.
+
+We use simple you-em-el class diagrams to show the structure of each pattern. A class is drawn as a box with the class name. Fields appear under the name. Methods appear below the fields. A diagram showing only the boxes and their relationships, with no field or method detail, is enough for most pattern explanations. The plus sign means public. The minus sign means private. Most pattern diagrams omit visibility entirely.
+
+Relationships between classes are drawn as lines and arrows. Inheritance is a hollow triangle pointing from the subclass to the parent. Interface implementation is a hollow triangle on a dashed line, pointing from the implementer to the interface. Association is a plain solid line. Aggregation is a hollow diamond on the owning side. Composition is a filled diamond on the owning side. Dependency is a dashed arrow. Where a sequence diagram appears in a later notebook — a series of method calls between objects, drawn as vertical lifelines with horizontal arrows — we will explain it inline.
+
+Now we come to the five SOLID principles.
+
+Before we get to specific patterns, there are five general design principles every pattern leans on. Robert C. Martin gathered and named them in the early two thousands, drawing on prior work by Bertrand Meyer and Barbara Liskov. The acronym is SOLID. S for single responsibility principle. O for open-closed principle. L for Liskov substitution principle. I for interface segregation principle. D for dependency inversion principle.
+
+The principles are not laws. They are heuristics. Defaults that pay off in most situations. Every pattern in the gang of four catalog applies one or more of them. Once you can see SOLID in your code, you can usually see which pattern fits without consulting a book.
+
+We work through each principle with a Python example and a Kotlin example. Python first, Kotlin second, every time.
+
+The single responsibility principle.
+
+A class should have one reason to change. Martin's later refinement makes the phrasing precise. A class should be responsible to one actor — one stakeholder, one role, one decision-maker. If two different actors might both demand changes to the same class, the class has two responsibilities and should be split.
+
+A classic violation is what people call the god class. Imagine a Report class that knows how to compute its data, format that data as h-t-m-l, persist the result to disk, send the report by email, and log its own metrics. That is five actors. The accounting team wants to change the calculation. The design team wants to change the formatting. The ops team wants to change the storage. The marketing team wants to change the email. The platform team wants to change the metrics. Five reasons to change. One tangled file.
+
+The fix is mechanical. Split each responsibility into its own class, then compose them. The corrected example in the notebook has three classes. A Report class that just holds rows and computes the total. An h-t-m-l renderer class that takes a report and produces a string. And a file store class that takes a path and a string and writes it. Each class answers to a single actor. Each class can be changed without dragging the others into the diff.
+
+A small caveat that catches people. The single responsibility principle is not "every class does exactly one thing". That interpretation leads to absurd fragmentation, where you end up with seventeen classes each holding one method. The principle is "every class is responsible to one stakeholder". The unit of responsibility is the actor, not the method.
+
+The open-closed principle.
+
+A class should be open for extension, and closed for modification. You should be able to add new behaviour without editing existing, working code.
+
+The motivation is risk. Every change to existing code is a chance to break something that already works and was already tested. The principle says — structure your code so that new requirements arrive as new code, added alongside the old, rather than as edits to the old.
+
+The dominant technique is replacing branching on a type tag with polymorphism. An if-elif chain that handles three discount strategies grows to four cases when a fourth strategy arrives. Every existing case sits in a file that just changed. Now imagine instead that you have a discount strategy type with four implementations. Adding the fourth is a new file. Zero existing files change. The blast radius of the change shrinks from "everywhere" to "one new file".
+
+The Python example in the notebook shows this beautifully. The bad version is a function that takes a customer type string and branches on it. Regular gets full price. Member gets ten percent off. Vip gets twenty percent off. Anything else throws. The good version replaces the branching with a function parameter. The function takes a discount strategy, which is just a callable from float to float. Each strategy is one line. Regular is a lambda that returns the total unchanged. Member is a lambda that multiplies by zero point nine. Vip multiplies by zero point eight. Adding an employee strategy that gives fifty percent off is one new line. The price function does not change. The existing strategies do not change.
+
+The Kotlin version uses a fun interface, which is Kotlin's name for a single-abstract-method interface. The shape is essentially the same. The strategy is a callable, the price function takes the strategy as a parameter, and adding a new strategy is one new declaration.
+
+Notice how cleanly this maps to first-class functions. In Python, the "interface" is just the callable type alias. The "strategy" is just a function. In old Java, you would have written a discount strategy interface, with concrete classes for regular discount, member discount, and vip discount. Three small classes plus an interface — four files — to do the same thing one line of Python does. The intent is identical. The amount of code is wildly different. Strategy in modern languages is mostly a vocabulary win, not a structure win.
+
+The Liskov substitution principle.
+
+A subtype must be substitutable for its base type. If your code works against a base class T, swapping in any subclass of T must not break it.
+
+This is Barbara Liskov's nineteen eighty-seven definition, dressed in object-oriented clothes. Concretely, a subclass cannot weaken the preconditions of overridden methods. It cannot demand more from its callers. It cannot strengthen the postconditions. It cannot promise less to its callers. It cannot throw exceptions the base type does not throw. And it cannot change the meaning of a method in a way that surprises callers.
+
+The famous violation is Rectangle and Square. A square is-a rectangle in geometry class. In code, that is-a relationship breaks. If Rectangle exposes a set width method and a set height method, a Square cannot honour both independently. Setting the width must also set the height, or the shape stops being a square. Now imagine code that holds a Rectangle reference, sets the width to five, sets the height to three, and expects an area of fifteen. Pass a Square and you get nine. The substitution broke.
+
+The lesson is that inheritance is a strong claim, not a weak one. The phrase "is-a" in everyday language is not always "is-a" at the type level. When in doubt, do not inherit.
+
+The fix in the notebook is to give up on inheritance between Rectangle and Square entirely. Both implement a Shape protocol. Shape has one method, area. Rectangle has its own internal width and height. Square has its own internal side. Neither one inherits from the other. They are siblings under a shared abstraction.
+
+Two things to take away. First, prefer composition over inheritance when the is-a relationship is shaky. Both Rectangle and Square sharing a parent — Shape — is safer than one inheriting from the other. Second, immutable types sidestep most Liskov substitution traps. The original violation was caused by mutators. Make the data immutable and the problem often evaporates entirely.
+
+The interface segregation principle.
+
+Clients should not be forced to depend on methods they do not use. Many small, focused interfaces beat one fat, do-everything interface.
+
+The classic violation is a Worker interface with three methods. Work. Eat. Sleep. A Robot worker class is forced to implement eat and sleep, even though neither makes any sense for a robot. The robot ends up throwing an unsupported operation exception, or doing nothing in the body of those methods. Either way, the type system has lied about the robot's contract.
+
+The fix is to split the interface by role. Workable has work. Feedable has eat. Sleepable has sleep. A human worker implements all three. A robot worker implements only workable. The type system now tells the truth.
+
+Interface segregation is what makes the next principle, dependency inversion, practical. Small interfaces are easy to inject into a constructor, and they are easy to mock in tests. Big interfaces force your tests to stub out methods you do not even use, just to satisfy the type checker.
+
+Python's protocol type, from the typing module, implements this principle elegantly. A protocol is a structural type. Any class with the right shape satisfies it. No inheritance required. You can declare a function parameter as workable and any object with a work method qualifies, regardless of where it sits in the class hierarchy. Kotlin needs an explicit interface declaration, but the principle is identical.
+
+The dependency inversion principle.
+
+High-level modules should not depend on low-level modules. Both should depend on abstractions.
+
+Concretely, a user service should not depend on a postgres user repository. Both should depend on a user repository interface. The service is written against the interface. The concrete implementation is injected at runtime.
+
+The word "inversion" refers to the direction of the dependency arrow. Without the principle, the high-level business logic imports the low-level database code. High depends on low. With the principle, the database code implements an interface owned by the business logic. The low-level code now depends on the abstraction, and the high-level code depends on the abstraction too. The arrow flipped. That is the inversion.
+
+This is the principle that makes testing tractable. A user service that depends directly on postgres user repository is hard to unit-test. You need a real database. A user service that depends on the user repository interface is easy. You pass in an in-memory fake.
+
+The dependency inversion principle is the bridge to dependency injection, which is the topic of notebook six. The principle tells you what to do — depend on abstractions. Dependency injection is how — constructor injection, framework containers, the rest of the mechanics.
+
+Of the five principles, dependency inversion is the most load-bearing for testable, maintainable systems. A codebase that consistently inverts its dependencies can swap any layer — database, message bus, payment gateway — for a fake in tests, and for a different implementation in production. A codebase that does not, pays for it forever in test suites that need real infrastructure and production code that cannot be swapped out without rewrites.
+
+When patterns help and when they get in the way.
+
+Three signs you should reach for a pattern. First — you have seen the same shape twice. Once is a special case. Twice starts to look like a pattern. Three times demands one. Second — naming the design clarifies the conversation. If "I want to add a step in the pipeline" and "I want to wrap a behaviour" produce different code reviews, the vocabulary is earning its keep. Third — the pattern's intent matches your problem. Not the structure. The intent. Strategy fits when algorithms are interchangeable, not when you happen to have several classes with one method each.
+
+Three signs the pattern is hurting. First — the pattern's structure is bigger than the problem. A singleton factory builder to construct one logger is paperwork dressed as architecture. Second — the pattern was applied before the problem appeared. Speculative patterns, applied because "we might need to swap implementations later", usually rot before the swap ever arrives. Third — the pattern obscures the domain. If a reader has to recognize a pattern before they can read the business logic, the pattern is in the way.
+
+The honest rule of thumb. Start with the simplest code that works. Refactor toward a pattern when a smell appears. Delete the pattern when the smell goes away. Patterns are tools, not goals.
+
+Notebook two turns to creational patterns. The family of five that decouples what gets constructed from who constructs it. Singleton, factory method, abstract factory, builder, and prototype. We will look at the intent of each one, the structure, a Python example, a Kotlin example, and the situations where the pattern is the wrong choice.
