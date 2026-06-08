@@ -1,5 +1,95 @@
-Creational patterns.
+Welcome to notebook two of the design patterns track. This notebook covers the first family in the gang of four catalog — the five creational patterns. Singleton, factory method, abstract factory, builder, and prototype. For each one we will look at the intent, where it shows up in real code, a Python example, a Kotlin example, and the situations where the pattern is the wrong choice.
 
-What is covered.
+What the creational family solves.
 
-This notebook covers the five Gang of Four creational patterns — singleton, factory method, abstract factory, builder, and prototype. For each pattern we look at the intent, the participants, a small Python example, the analogue you would write on the java virtual machine, and the situations where the pattern hurts more than it helps.
+All five creational patterns answer the same question. Who decides which concrete class to construct. The usual answer — the calling code, using the new keyword or a direct constructor call — is fine until it is not. The pattern family exists for the situations where it is not.
+
+Three forces drive code away from direct construction. First, the concrete type varies at runtime. The calling code wants a payment processor, but the choice between Stripe, PayPal, and Square depends on configuration, the customer's country, or which a-b test bucket the user fell into. The calling code should not know about the three concrete classes. Second, construction is complex. An object with twenty optional fields, multi-step validation, or an expensive initialization sequence is painful to build inline. A specialized builder isolates the complexity. Third, you want exactly one instance, or you want to clone an existing one rather than reconstructing it from scratch.
+
+In Java, the answer to all three forces is usually a class with static factory methods. In Kotlin you have object declarations and the data class copy method built into the language, which collapses two of these patterns into language features. In Python, a module is already a singleton, dataclass and keyword arguments cover most builders, and the deepcopy function is one line. Several gang of four creational patterns are nearly invisible in idiomatic Python. We still cover all five, because the intent vocabulary — "use a factory method here", "use a builder there" — is shared across the team even when the structural ceremony disappears.
+
+Singleton.
+
+The intent is simple. Ensure a class has exactly one instance, and provide a global access point to it.
+
+Singleton shows up wherever the object is conceptually unique to the running process. Loggers. Configuration objects. Database connection pools. Service registries. The original gang of four structure had a private constructor and a static get-instance method that returns the lone instance, lazily creating it on first call.
+
+Python's take is to use a module. A module in Python is already a singleton. You write your config inside a file called config dot p-y, then anywhere else in the program you write import config, and you get the same object every time. Zero boilerplate. If you really want a class-based singleton, you override the dunder new method to return the cached instance — the first time the class is instantiated, you create the real object; every subsequent call returns the same one.
+
+Kotlin's take is even more direct. The language has the pattern built in. You write object Logger, open brace, methods and state, close brace, and Kotlin guarantees there is exactly one Logger for the lifetime of the program. No factory method, no double-checked locking, no thread-safety boilerplate. Compare this to Java, where you would write a private constructor, a private static instance field, a public static get-instance method, and usually some double-checked locking to make it thread-safe. Kotlin collapses all of that to one keyword.
+
+Now the warning. Singleton is the single most over-used pattern in the catalog. Hidden global state is hard to test, because every test that runs interacts with the same instance, and tests pollute each other through that shared state. Hidden global state is hard to reason about under concurrency, because two threads can be modifying the same instance at the same time. And hidden global state usually signals that the caller should be receiving the dependency through its constructor instead. The honest rule of thumb is this. Reach for singleton when the object's uniqueness is part of its identity — a process-wide logger, a hardware device handle, a connection pool that exists exactly once. Do not reach for it because "we only need one for now". That sentence is almost always followed by pain.
+
+Factory method.
+
+The intent is to define a method for creating an object, but let subclasses decide which concrete class to instantiate.
+
+Factory method shows up anywhere a framework calls back into your code asking "what should I create here". Django's get-form-class. JUnit's new-test-class. The canonical gang of four example is a dialog class with a method called create-button, where windows-dialog and mac-dialog override that method to return different button types.
+
+The shape is this. A base class has an algorithm — say, a method called open — that internally calls a creation method — create-button — without knowing the concrete type. Subclasses override create-button to control what gets built. The parent's algorithm stays unchanged. The variation lives in the subclass.
+
+Python's take is to use a class method as a factory. The at-classmethod decorator on a method that returns an instance of the class is the idiomatic shape. Or, even simpler, just a plain function — Python does not punish you for skipping the class entirely.
+
+Kotlin's take is an abstract method overridden in subclasses, or a companion object factory function. The companion object is Kotlin's mechanism for class-level methods, since Kotlin classes do not have static methods directly.
+
+A useful contrast with the next pattern. Factory method is *one* product per subclass. Abstract factory, which we cover next, is a *family* of products grouped together. If you find yourself writing a factory method that has to be called several times with different return types, you have probably wandered into abstract factory territory.
+
+Do not use factory method when you only ever have one concrete class. Just call the constructor. The pattern earns its complexity when the parent algorithm legitimately depends on creating products whose concrete type it does not know. And when the choice of subclass is decided by a runtime value rather than by polymorphism, a plain function with an if-elif is clearer than a class hierarchy.
+
+Abstract factory.
+
+The intent is to provide an interface for creating *families* of related products without specifying their concrete classes.
+
+Abstract factory shows up in you-eye toolkits where mac widgets must match mac widgets and windows widgets must match windows widgets. It shows up in database drivers where a postgres factory produces postgres connections, postgres cursors, and postgres result sets — all matching. It shows up in cloud sdks where the a-w-s factory produces compatible storage, queue, and identity objects, and the azure factory produces a different but internally consistent set.
+
+The shape is this. An abstract factory interface declares one method per product type — create-button, create-menu, create-window. Concrete factories implement the interface to produce a consistent family. The client code holds a factory reference and asks it for products without knowing which family it has.
+
+The distinction from factory method is this. Factory method is one creation method, often varied by inheritance. Abstract factory is several creation methods grouped together, each producing a member of the same family. Factory method varies one product. Abstract factory varies a whole family of products at once.
+
+Python's take is a class with multiple factory methods, or a dictionary of factories indexed by family name. The full ceremony with abstract base classes is rarely worth it in Python; the intent — products from the same family are produced together — is what matters more than the structure.
+
+Do not use abstract factory when the products are not actually a *family*. If a mac button can sit happily next to a windows menu, you do not need this pattern. Plain factory functions or a dependency-injection container are simpler. Abstract factory earns its keep when mixing families would break things, and the type system needs to enforce the grouping.
+
+Builder.
+
+The intent is to separate the construction of a complex object from its representation, so the same construction process can build different shapes.
+
+Builder shows up everywhere construction is complex. Sequel query builders. h-t-t-p request builders. Configuration objects with twenty optional fields. Test fixtures where you write user-builder dot with-email of alice-at-example-dot-com dot with-role of admin dot build. Domain-specific languages.
+
+Two reasons drive you to reach for builder. The first is many optional parameters. A constructor with twelve optional arguments is a usability disaster. A builder lets callers set only what they care about, in any order, with each call self-documenting. The second is multi-step validation or transformation. The builder runs validation in the build method, after every step is set, rather than in the constructor when only some fields are present.
+
+Python's take is to use a dataclass with all-optional fields, which covers most cases. For fluent chaining, where each setter returns self so calls can be chained dot-and-dot down a line, you write each method to return self. The notebook shows an h-t-t-p request builder built this way, with method, header, body, and timeout setters, all returning self, and a final build method that validates and constructs the immutable request object.
+
+Kotlin's take is more elegant. Lambdas with receiver give you a domain-specific language for free. You write http-request, open paren, the url, close paren, then a block in braces where you set method equals POST, call header of content-type comma application-slash-json, set body equals the json string, and so on. The block runs in the context of a builder, so the property assignments and method calls implicitly target the builder. This is one of Kotlin's signature idioms.
+
+Do not use builder when the constructor is fine. Few parameters, no validation, no variation — just use the constructor. A point with x and y does not need a builder. The pattern's overhead is justified when the alternative is a constructor with ten optional arguments, or when validation depends on combinations of fields that can only be checked once construction is complete.
+
+Prototype.
+
+The intent is to create new objects by cloning an existing instance, rather than constructing from scratch.
+
+Prototype shows up in game development, where you have a fully configured enemy template and you clone it to spawn each instance, then tweak the hit points or position. It shows up in document templates, where you clone the default invoice and fill in the customer details. It shows up in test data, where you clone a known-good fixture and mutate one field per test case.
+
+The motivation is that sometimes the *configured state* of an existing object is what you want, and reproducing it from raw constructor arguments is either expensive or impractical. Cloning skips the construction sequence entirely.
+
+Python's take is the copy module. You call copy dot copy for a shallow clone — fields are copied but nested mutable objects are shared with the original. You call copy dot deepcopy for a recursive clone — the entire object graph is walked and cloned, so the clone is fully independent. The notebook shows both, and shows the gotcha where modifying a list on the shallow clone also modifies the list on the original, because they are the same list object.
+
+For frozen dataclasses, Python has an even cleaner approach. The dataclasses module ships a function called replace, which takes an existing instance and returns a new one with some fields overridden. This is the idiomatic way to do immutable updates in Python.
+
+Kotlin's take is built into the language. Every data class has a copy method generated by the compiler. You write goblin-template dot copy of h-p equals forty, and you get a new instance with the h-p field overridden and everything else the same. You can override multiple fields at once. This is one of Kotlin's most beloved features and it effectively makes the prototype pattern invisible in idiomatic Kotlin code.
+
+The shallow-versus-deep distinction matters and is worth internalizing. A shallow copy shares nested mutable objects with the original — mutating one mutates both. A deep copy walks the whole object graph and clones everything — the two are fully independent. Pick the right one for your use case, and if you are working with immutable data classes, the distinction goes away because there is nothing to mutate.
+
+Do not use prototype when the constructor is cheap and obvious — just call it. The pattern earns its keep when construction is expensive and the configured state of an existing instance is what you want to start from, or when you want a clone-and-modify workflow where most fields stay the same. In Python, prefer the dataclasses replace function for the immutable-update case. In Kotlin, the data class copy method makes the pattern transparent.
+
+Choosing between the five.
+
+A short decision guide for when more than one pattern fits. Exactly one instance accessible everywhere — singleton, but try passing the dependency first. Subclasses decide which concrete product to build — factory method. Multiple products that must be from the same family — abstract factory. Many optional fields or multi-step validation — builder. Clone a configured instance instead of reconstructing — prototype.
+
+Two heuristics worth keeping.
+
+First, the pattern's intent should match your problem, not its structure. The sentence "I have several classes with one method each" looks like strategy, not factory. The sentence "I want exactly one logger" looks like singleton, but is often really "I want to inject a logger". Lead with the intent, always.
+
+Second, Python and Kotlin collapse several of these patterns into language features. Singleton becomes a module or an object declaration. Builder becomes a dataclass with defaults or a Kotlin domain-specific language. Prototype becomes deepcopy or the data class copy method. The intent vocabulary survives even when the structure has disappeared, but the structure itself is often shorter than the old gang of four diagrams would suggest.
+
+Notebook three turns to structural patterns — the family of seven about composing objects into larger structures. Adapter, bridge, composite, decorator, facade, flyweight, and proxy. The recurring theme across all seven is composition over inheritance — wiring small objects together to build larger behaviour, rather than extending a class hierarchy.
