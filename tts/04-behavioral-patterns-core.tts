@@ -1,5 +1,113 @@
-Behavioral patterns, core.
+Welcome to notebook four of the design patterns track. This notebook covers the five behavioral patterns you will reach for most often in real code. Strategy, observer, command, template method, and iterator. These five carry most of the day-to-day weight in object-oriented codebases, which is why they get their own notebook before we get to the more situational five in notebook five.
 
-What is covered.
+What the behavioral family solves.
 
-This notebook covers the five behavioral patterns you will reach for most often — strategy, observer, command, template method, and iterator. These five carry most of the day-to-day weight in real codebases, so we spend more time on Python examples and the trade-offs against simpler alternatives like a plain function or a callback.
+If creational patterns answer who builds the object, and structural patterns answer how the objects fit together, the behavioral family answers how the objects communicate and divide work.
+
+The eleven behavioral patterns address three recurring problems. The first is choosing what to do. Different algorithms or behaviours fit different situations. Strategy and template method pick an algorithm. Command captures one as a value. State lets the algorithm change with the object's mode. The second is talking to other objects. Observer broadcasts changes. Mediator centralizes communication. Chain of responsibility passes requests along until handled. The third is walking over structure. Iterator decouples traversal from collection shape. Visitor decouples operation from class hierarchy.
+
+This notebook covers the five that show up most often. Strategy, observer, command, template method, and iterator. Notebook five covers the more situational five — state, chain of responsibility, mediator, memento, and visitor — that earn their complexity less frequently but are sharp tools when the problem fits.
+
+Strategy.
+
+The intent is to define a family of algorithms, encapsulate each one, and make them interchangeable. The algorithm varies independently from the clients that use it.
+
+Strategy shows up everywhere. Sort comparators. Payment processors. Discount rules. Validation rules. Route planners — shortest versus fastest versus avoid-tolls. Compression codecs. Retry policies. Anywhere the question "how do we do this" has more than one valid answer at runtime.
+
+The shape is straightforward. A strategy interface declares the algorithm's signature. Concrete strategies implement it. The context object holds a strategy reference and delegates to it. Swapping strategies is a single assignment.
+
+Python's take is that strategy is the pattern that most completely dissolves into language features. A strategy in Python is usually just a function. The interface is a callable type alias. We already met this shape in notebook one's open-closed example. Now we name it and make the structural alternative explicit.
+
+Kotlin's take is that a fun interface — a single-abstract-method interface — plus lambdas gives you the same compactness, with compile-time type safety.
+
+The notebook example is an h-t-t-p client with a retry policy strategy. No retry waits zero seconds between attempts. Fixed delay waits a constant number of seconds. Exponential backoff waits a base time doubled on each attempt, capped at a maximum. The client holds a retry policy reference and consults it. Swapping policies is one constructor argument.
+
+A useful distinction to keep in mind, which we will return to under template method. Strategy uses composition. The algorithm lives in a separate object you swap. Template method uses inheritance. Subclasses fill in steps of a fixed algorithm. Same goal, different mechanism.
+
+Do not use strategy when the algorithm never changes. If there is only ever one implementation, the indirection is pure overhead. Reach for strategy when the choice of algorithm is a real axis of variation — configurable per environment, per request, or per a-b test bucket.
+
+Observer.
+
+The intent is to define a one-to-many dependency between objects, so that when one object changes state, all its dependents are notified and updated automatically.
+
+Observer shows up in event systems. Model-view-controller view updates. Publish-subscribe messaging. Reactive state libraries like RxJava on the java virtual machine, Combine on Apple platforms, and MobX on the web. Spreadsheet recalculation. File-watching tools.
+
+The shape is this. The subject — the thing being observed — maintains a list of observers and exposes subscribe and unsubscribe methods. When its state changes, it calls each observer's update method with the relevant data.
+
+There are two common delivery models. The push model — the subject sends the new state along with the notification. The pull model — the subject just signals "something changed" and observers query for what they need.
+
+Python's take is to keep a list of callbacks and iterate to notify. Or you reach for a library — blinker for explicit signals, asyncio dot event for one-shot wake-ups, RxPY for full reactive streams.
+
+Kotlin's take is delegates dot observable for property-level change notifications, flow and state-flow for the reactive-stream variant, and a manual list of callbacks for simple cases.
+
+The notebook example is a stock ticker that notifies subscribers when a price changes. One subscriber logs every price update. Another subscriber alerts when the price drops below one hundred. You can unsubscribe the logger at any time, and the alert keeps firing.
+
+The hidden cost of observer is worth flagging. Observers create implicit dependencies that are not visible in the type signatures. A subject that broadcasts to ten unknown observers can be surprisingly hard to debug. When you trace through an event flow, the type system does not tell you who is listening, so reading the code is no longer enough — you have to find every subscribe call.
+
+Do not use observer when the dependencies are simple and explicit. Just call the dependents directly. The pattern adds value when the set of dependents is unknown to the subject, or changes at runtime. For complex event flows, consider a dedicated event bus or reactive library rather than rolling your own.
+
+Command.
+
+The intent is to encapsulate a request as an object, allowing parameterization of clients, queuing of requests, logging, and support for undoable operations.
+
+Command shows up in undo and redo systems. Task queues like Celery or Sidekiq. Macro recorders. you-eye button bindings. Transaction logs. Command query responsibility segregation command handlers. Scheduling.
+
+The shape is this. A command object captures everything needed to perform an operation — the receiver, the method, and the arguments. The command has an execute method, often with a paired undo. Clients construct commands and either invoke them directly or hand them to an invoker — a queue, a button, a history stack.
+
+The win is that the request becomes a value. You can put commands in a list — that gives you a history. You can serialize them — that gives you an audit log. You can defer them — that gives you a queue. You can reverse them — that gives you undo.
+
+Python's take is that any callable is already a command, in the simplest case. For commands with state — undo support, retries, metadata — a class or dataclass with execute and undo methods is the right shape.
+
+Kotlin's take is function references for simple cases, and a sealed interface command with concrete subtypes when you need pattern matching, serialization, or rich command metadata.
+
+The notebook example is a text editor with insert and delete commands, each implementing execute and undo. A history class keeps a stack of executed commands. Running a command pushes it. Calling undo pops the top command and reverses it. The sequence in the notebook inserts "hello, world", deletes the seven characters of ", world", undoes the delete to restore the comma and world, undoes the insert to empty the editor.
+
+Do not use command when the operation is a simple, immediate function call with no need for queuing, undoing, or logging. A direct method call is shorter and clearer than wrapping it in a command object. Command earns its keep when the request needs to outlive the moment it is issued — sitting in a queue, on a history stack, or in an audit log.
+
+Template method.
+
+The intent is to define the skeleton of an algorithm in a base class, deferring some steps to subclasses. Template method lets subclasses redefine specific steps without changing the algorithm's structure.
+
+Template method shows up in framework hooks. Django's view dispatch method calls get and post on the subclass. Test fixture lifecycles call set-up before each test and tear-down after. o-r-m lifecycle callbacks call before-save and after-save around persistence. Data pipelines run extract, transform, and load in that order. Document generators emit a header, then body, then footer.
+
+The shape is this. An abstract base class defines a concrete template method that calls a sequence of other methods. Some of those methods are abstract — subclasses must implement them. Some are hooks — concrete methods that do nothing by default, and subclasses may override them if they want. The template method's order is fixed. Only the individual steps vary.
+
+A clean comparison between strategy and template method, since the two patterns overlap. Strategy uses composition. You inject a different algorithm object. Template method uses inheritance. You subclass and override specific steps. Strategy gives more flexibility — any combination of strategies, swappable at runtime. Template method gives more structure — the framework controls the order, and the subclass cannot deviate from it. Pick strategy when the entire algorithm varies. Pick template method when steps within a fixed algorithm vary.
+
+Python's take is an abstract base class, with the at-abstract-method decorator on required steps, and plain methods for hooks. Or, the same intent without the inheritance — a function that accepts other functions as arguments.
+
+Kotlin's take is an abstract class with abstract methods for required steps and open methods for hooks. Open is Kotlin's keyword for "may override but does not have to".
+
+The notebook example is a data pipeline base class. The template method called run extracts, transforms, optionally validates, and loads, in that fixed order. The c-s-v pipeline subclass overrides each step concretely. The fast pipeline subclass overrides the steps and also overrides the should-validate hook to skip validation entirely for speed.
+
+Do not use template method when the algorithm's steps are simple enough that a function taking other functions as arguments would do the job. The pattern's overhead — abstract class, inheritance, protected methods — is justified when the framework needs to enforce the order and provide multiple extension points with sensible defaults. For a single point of variation, prefer strategy with a passed-in function.
+
+Iterator.
+
+The intent is to provide a way to access the elements of an aggregate object sequentially, without exposing its underlying representation.
+
+Iterator shows up everywhere. It is so fundamental that modern languages have built it into the language itself. Python's for-x-in-x-s loop. Java's enhanced for loop. Kotlin's for-x-in-x-s loop. All of them rely on the iterator protocol underneath.
+
+The shape is this. An iterator exposes two operations — "is there a next element" and "give me the next element". The collection exposes a way to ask for an iterator over itself. The pattern decouples traversal from collection shape — code that walks a tree, a linked list, and a flat array looks the same.
+
+Python's take is the iterator protocol. Dunder iter returns an iterator. Dunder next returns the next value or raises stop iteration. Generators — functions that use the yield keyword — are the idiomatic way to write custom iterators. They are functions that produce iterators with state preserved between calls.
+
+Kotlin's take is the iterator interface with has-next and next, but the sequence abstraction — written as sequence open brace, yield, close brace — gives you generator-style code with lazy evaluation, much closer to Python's experience.
+
+Why does this pattern still matter even though it is built in. When you write a non-trivial data structure — a tree, a sparse matrix, a custom graph — knowing the iterator protocol means you can plug your structure into every for loop, every list comprehension, every standard-library function that takes an iterable. The pattern is the interface.
+
+The notebook example walks a binary search tree in order using a generator. The function in-order takes a tree node and yields the left subtree first, then the node's own value, then the right subtree. Recursion handles the tree shape. The binary tree class wraps the root and delegates its dunder iter method to the generator. The result is that list-of-tree gives you the sorted values, a list comprehension filtering for values greater than four works directly on the tree, and the built-in sum function works on the tree because tree iteration yields integers.
+
+Do not use a custom iterator — almost never. The pattern is so fundamental it is the cost of admission for any data structure you want to share with the rest of the language ecosystem. The one case to flag is eager versus lazy. A generator produces values on demand and does not materialize a list. If your traversal is expensive and the consumer might not need every value, generators win. If you need to walk the same data many times, materializing once into a list is cheaper than re-running the generator.
+
+Picking the right behavioral-core pattern.
+
+A short decision guide. I have several interchangeable algorithms, and which one varies at runtime — strategy. When one object changes, many others need to react — observer. I need to queue, log, or undo operations — command. I have a fixed algorithm with variable steps — template method. I need to walk a custom data structure without exposing its shape — iterator.
+
+Two pairs worth distinguishing one more time. Strategy versus template method. Both vary the algorithm. Strategy varies the whole algorithm via composition — pass a different object. Template method varies steps within a fixed algorithm via inheritance — override specific methods.
+
+Observer versus command. Both decouple sender from receiver. Observer is push-based — the subject calls into observers when state changes. Command is value-based — the request becomes an object the receiver acts on when it is ready.
+
+Strategy and iterator are the two patterns that have most completely dissolved into modern languages. The vocabulary still matters when discussing intent. The structural ceremony is usually one line.
+
+Notebook five turns to behavioral patterns, advanced. The remaining five. State, chain of responsibility, mediator, memento, and visitor. These show up less often, but each one solves a specific problem cleanly when its shape matches yours.
