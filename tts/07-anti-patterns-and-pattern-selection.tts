@@ -1,5 +1,117 @@
-Anti-patterns and pattern selection.
+Welcome to notebook seven, the final notebook of the design patterns track. This notebook is the counter-weight to the six that came before it. We have spent six notebooks looking at patterns pattern-by-pattern, which has a built-in failure mode — it makes patterns look like the answer. They are not. The default is no pattern. The simplest code that solves today's problem is the right starting point. Patterns enter when a specific smell appears that they specifically address.
 
-What is covered.
+The most common reason real codebases become hard to work with is not "they forgot to use the visitor pattern". It is "they over-applied patterns they did not need, or they reached for the wrong one". Pattern vocabulary is valuable. Pattern ceremony is expensive. Knowing which to apply, when, and equally importantly when to remove a pattern that has outlived its usefulness, is what separates engineers who use patterns well from those who use them religiously.
 
-This notebook closes the series with the failure modes — common anti-patterns like god classes, singleton abuse, anemic domain models, and pattern fever — and a practical decision guide for picking a pattern only when a real code smell justifies it. The thread running through is: start simple, refactor toward a pattern when the shape of the problem demands it, and delete patterns that no longer earn their keep.
+We will walk through six common anti-patterns by name, then turn to the decision framework for choosing patterns wisely.
+
+Anti-pattern one. God class.
+
+The smell is that one class does everything. Hundreds or thousands of lines. Methods for computing data, formatting it, persisting it, sending notifications, logging metrics, and applying business rules. Every change touches this file. Every team has it in their pull request queue.
+
+Why it happens is the path of least resistance. New functionality gets added where the existing functionality lives. Each addition is just one more method. The class accretes responsibilities one commit at a time.
+
+The cost is that the class violates the single responsibility principle by an order of magnitude. Tests touch every dependency in the system because the class touches everything. Merge conflicts on this file are constant. Onboarding documentation calls it "the main class".
+
+The fix is to decompose by actor. Identify the distinct stakeholders who would request a change — the formatting team, the storage team, the business-rules team — and split the class along those lines. The pieces become injectable dependencies. The original class either disappears or becomes a thin coordinator.
+
+The patterns that help are the single responsibility principle from notebook one, facade from notebook three if you still want a single entry point, and strategy or template method from notebook four for the algorithm pieces.
+
+The notebook example shows a report god class with eight methods — compute total, compute average, render h-t-m-l, render c-s-v, save to disk, email, log access, and so on. The decomposed version is six small classes — report, h-t-m-l renderer, c-s-v renderer, file store, email service, audit log. Each has a clear actor. Each can be tested without dragging in the others. You can add a seventh concern — a p-d-f renderer, a slack notifier, an s-three store — without touching any of the existing six.
+
+Anti-pattern two. Singleton abuse.
+
+The smell is that a class is a singleton because "we only need one for now" or "passing it everywhere is annoying". Tests cannot run in parallel because they share state through it. Mocking it requires monkey-patching. Two parts of the codebase that should not know about each other are coupled through the singleton.
+
+Why it happens. Singleton is the easiest gang of four pattern to apply. One line in Kotlin. A few in Python. And it feels like a clean solution to "I need a logger, a config, a connection pool, everywhere". It avoids the perceived hassle of threading dependencies through constructors.
+
+The cost is that the singleton is global state with one extra layer of indirection. Every problem that global state has — implicit coupling, untestability, surprising mutation — applies to it.
+
+The fix is to make the dependency explicit. Pass it through the constructor. Use a composition root that constructs exactly one instance and passes it everywhere it is needed. If wiring becomes painful, then introduce an inversion-of-control container — not a singleton.
+
+The legitimate uses are when the object's uniqueness is part of its identity. A process-wide log handler that everyone agrees to. A hardware device handle. A pre-warmed connection pool. The litmus test is — can you imagine wanting two of these in the same process for tests? If yes, it is not a singleton.
+
+Anti-pattern three. Anemic domain model.
+
+The smell is that domain objects are just bags of data with getters and setters. All the actual behaviour lives in "service" or "manager" classes that operate on the data. Order has fields and accessors. Order service has every method that does anything to an order.
+
+Why it happens. The anti-pattern is popular in codebases that started from database schemas and grew layered architectures around them. "Models are data, services are logic" feels orderly, especially when the framework or the object-relational mapper encourages it. Java's java-beans tradition pushed in this direction for two decades.
+
+The cost is that behaviour and the state it operates on live in different files. Reading the domain is harder. To understand what an order can do, you read the field list, then track down every service that touches an order. Encapsulation is weakened. The service classes need broad access to the object's fields, so the fields end up effectively public.
+
+The fix is to put behaviour next to state. Order dot cancel lives on order. Order dot add-item lives on order. The service exists when an operation legitimately spans multiple aggregates. Transfer between two accounts belongs on a transfer service because no single account owns it. But single-object operations belong on the object.
+
+The vocabulary here comes from domain-driven design. "Rich domain models" describe objects with behaviour. "Anemic models" describe objects without. Eric Evans' domain-driven design book made the distinction famous and convinced a generation of Java developers to push behaviour back into their entities. Kotlin's data classes plus extension functions, and Python's dataclasses plus methods, make rich models genuinely lightweight.
+
+The notebook example shows an order in both forms. The anemic order is just fields, and the order service owns add-item, total, and submit. The rich order has those methods on it directly, with validation rules — like "only draft orders can be modified" — right next to the data they protect. The rich version cannot be bypassed by code that mutates fields directly, because the operation is the only way through.
+
+Anti-pattern four. Pattern fever.
+
+The smell is a codebase where every concept is a pattern. The simplest function is wrapped in a strategy. Every singleton has a factory. Every collection has a decorator. New developers spend their first month learning the codebase's pattern vocabulary before they can read business logic.
+
+Why it happens. Patterns feel like architecture. Applying them feels like senior engineering. Senior engineers under-appreciate that the code's vocabulary footprint is a tax on every reader. Every named pattern is a concept the reader has to recognize before they can read the actual logic underneath.
+
+The cost is not in the patterns themselves but in their combination. A singleton-factory-builder-decorator chain wrapping a five-line operation is three levels of indirection too many. Reading the code means traversing the indirection layers to find the business logic, which is buried at the bottom.
+
+The fix is to delete the pattern when the smell it was meant to address either never appeared or has gone away. Patterns are reversible. A strategy with one concrete implementation can become a direct function call. A singleton can become a passed parameter. A decorator with one capability can become a method on the wrapped class.
+
+The most useful antidote is the rule of three. The first time you see a shape, write the simplest code that solves it. The second time, consider whether you have a pattern. The third time, apply the pattern. Patterns applied on the second occurrence are speculative. Patterns applied on the third are responsive to real evidence.
+
+Anti-pattern five. Lava layers.
+
+The smell is that the codebase has visible geological strata of past architectural decisions. The old controllers call into the new service layer, which calls into the old facade, which calls into the new repository, which calls into the old data access object, which still has its own connection management. Each layer was added when the team decided to do it right this time, but the old layer was never removed.
+
+Why it happens. Large refactors are hard. So teams pile new abstractions on top of old ones instead of replacing them. Each refactor is a partial migration. The deprecated layers remain because removing them requires updating call sites the team cannot afford to revisit.
+
+The cost is that every read of the code traverses layers that exist only as fossils of past decisions. Performance suffers. Onboarding suffers — new engineers have to learn three architectural eras to ship a single feature.
+
+The fix is to finish refactors. When introducing a new pattern, accept that the change is not done until the old one is removed. If the migration cannot be completed in one pull request, the change is too large — reduce its scope. Better to leave the old layer untouched than to add a half-migrated new layer on top.
+
+The discipline this requires is to treat architecture changes as atomic. A new abstraction is not merged until the old one is gone or has a credible deletion plan in the next sprint. "We will clean up the old layer later" is the sentence that creates lava layers.
+
+Anti-pattern six. Premature generalization.
+
+The smell is abstractions designed for use cases that do not yet exist. A payment processor interface with one implementation. A notification strategy that always sends email. A generic repository when there is only one entity type. Configuration tables that no one configures.
+
+Why it happens. "We might need to swap implementations later". This sentence is almost always wrong. The actual second implementation, if it ever arrives, has requirements the speculative abstraction did not anticipate, so the abstraction has to be rewritten anyway. The interface ends up shaped by the original implementation, not by the eventual diversity.
+
+The cost is that abstractions cost. They split code across more files. They add indirection in stack traces. They force callers to learn the abstract shape before the concrete one. A speculative abstraction pays the cost without the benefit.
+
+The fix is to apply yagni — you are not gonna need it. Build the concrete implementation. When a second concrete implementation arrives with real requirements, refactor to introduce the abstraction. The shape will fit both because both shaped it.
+
+There is one exception. Abstractions at the boundary of your system — where you talk to a database, a third-party ay-pee-eye, a file system — are often worth introducing early. Not because you will swap them, but because the boundary is where tests need to substitute fakes. A premature repository interface that supports an in-memory implementation for testing earns its keep on day one.
+
+Code smells that suggest a specific pattern.
+
+A short field guide. When the smell appears, the pattern is the usual answer.
+
+A long if-else chain on a type tag — strategy or state. A long if-else chain on a value range where the cases will grow — chain of responsibility. A class with too many constructor parameters, most optional — builder. Duplicate code in subclasses that differ only in a step or two — template method. Several classes that change together when one changes — mediator or observer. Code that says "if this is null, do x, otherwise do y" everywhere — null object. Business logic that needs the same predicate in several places — specification. Tests that need a real database, network, or file system to run — repository with an in-memory implementation. Code that says "I want to add a step before or after this method without changing it" — decorator. A class that does five visibly different things — single responsibility plus decomposition, possibly facade. A subsystem with many entry points the rest of the system uses inconsistently — facade. Data structures of the same shape walked many different ways — visitor, or sealed with when. State that needs to be captured and restored — memento. An operation that needs to be queued, logged, or undone — command.
+
+The key word is "suggests". Code smells point toward patterns. They do not mandate them. A smell with only one example does not justify a pattern. Wait for the rule of three.
+
+A decision framework for choosing patterns.
+
+A four-question checklist for whether to introduce a pattern. First — has the smell appeared at least three times in the codebase? If no, do not introduce the pattern yet. Write straightforward code. Wait for evidence. Second — does the pattern's intent match the problem? Not the structure — the intent. Strategy is for "algorithm varies at runtime", not for "we have several classes with one method each". Third — is the structure smaller than the problem? A singleton-factory-builder to construct one logger is not architecture. It is paperwork. If the pattern's footprint is bigger than the problem it solves, reconsider. Fourth — can someone unfamiliar with the codebase read it? If recognizing the pattern is a prerequisite for understanding the business logic, the pattern is obscuring the domain. The same logic written directly should be at least as readable.
+
+If all four answers come back positive, introduce the pattern. If one answer is uncertain, write the straightforward code and come back when more evidence accrues.
+
+When to delete a pattern.
+
+Patterns are not permanent. A pattern that earned its keep in twenty twenty-two may have outlived the requirements by twenty twenty-five. Five signs a pattern should be deleted.
+
+First — the variation it abstracted over has collapsed to one case. A strategy with only one concrete implementation, after the others have been removed, is dead weight. Inline the remaining strategy.
+
+Second — the smell it addressed has gone away. A repository that was introduced for testability is no longer needed if the production code now talks directly to an in-memory store. Remove the interface and let the concrete type be the type.
+
+Third — the pattern's structure is fighting newer language features. A custom iterator class introduced in twenty ten may now be one line as a generator. A bespoke visitor in Kotlin may now be a when expression with sealed types.
+
+Fourth — no one remembers why the pattern is there. Code archeology turns up no commit message, no design doc, no comment explaining the choice. The pattern is cargo culted at this point and should be evaluated as if it were being introduced new.
+
+Fifth — the pattern is a maintenance burden. Every change requires touching the interface, the abstract class, and three implementations. If the cost of carrying the pattern exceeds the cost of inlining it, inline it.
+
+Deleting a pattern is just as legitimate an engineering activity as introducing one. The codebase belongs to the engineers maintaining it now, not to the engineers who wrote it. If the pattern is no longer earning its keep, remove it.
+
+The throughline.
+
+Patterns are vocabulary for design intent, not a checklist of structures to apply. That is the durable contribution of the gang of four catalog. "Strategy" still communicates more than "callable parameter", even when the implementation is one line. The structural ceremony around each pattern is negotiable — Python's first-class functions, Kotlin's data classes and sealed types, and modern language features generally have collapsed several patterns into language constructs. The intent survives the collapse.
+
+The honest rule of thumb has not changed in three decades. Start with the simplest code that works. Refactor toward a pattern when a real smell appears. Name the pattern explicitly so the team's vocabulary stays sharp. And delete patterns that no longer earn their keep. Patterns are tools, not goals.
