@@ -1,0 +1,5 @@
+Behavioral patterns, advanced.
+
+What is covered.
+
+This notebook covers the remaining five behavioral patterns — state, chain of responsibility, mediator, memento, and visitor. These show up less often but each one solves a sharp problem cleanly. The key skill is recognizing the shape of the problem early enough that the pattern feels obvious rather than imposed.

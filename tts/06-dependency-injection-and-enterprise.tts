@@ -1,0 +1,5 @@
+Dependency injection and enterprise patterns.
+
+What is covered.
+
+This notebook covers dependency injection and the enterprise patterns that grew up around modern service-oriented code — repository, unit of work, specification, and null object. We walk through how inversion of control flips the wiring of a program, the three injection styles, and the recipes that show up again and again in a typical service layer.

@@ -1,0 +1,5 @@
+Behavioral patterns, core.
+
+What is covered.
+
+This notebook covers the five behavioral patterns you will reach for most often — strategy, observer, command, template method, and iterator. These five carry most of the day-to-day weight in real codebases, so we spend more time on Python examples and the trade-offs against simpler alternatives like a plain function or a callback.

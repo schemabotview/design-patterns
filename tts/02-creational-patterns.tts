@@ -1,0 +1,5 @@
+Creational patterns.
+
+What is covered.
+
+This notebook covers the five Gang of Four creational patterns — singleton, factory method, abstract factory, builder, and prototype. For each pattern we look at the intent, the participants, a small Python example, the analogue you would write on the java virtual machine, and the situations where the pattern hurts more than it helps.

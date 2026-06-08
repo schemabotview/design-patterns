@@ -1,0 +1,5 @@
+Structural patterns.
+
+What is covered.
+
+This notebook covers the seven Gang of Four structural patterns — adapter, bridge, composite, decorator, facade, flyweight, and proxy. The recurring theme is composition over inheritance, and we work through how each pattern lets you assemble small objects into larger structures without locking yourself into a rigid class hierarchy.

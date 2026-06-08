@@ -1,0 +1,5 @@
+Anti-patterns and pattern selection.
+
+What is covered.
+
+This notebook closes the series with the failure modes — common anti-patterns like god classes, singleton abuse, anemic domain models, and pattern fever — and a practical decision guide for picking a pattern only when a real code smell justifies it. The thread running through is: start simple, refactor toward a pattern when the shape of the problem demands it, and delete patterns that no longer earn their keep.
