@@ -1,5 +1,101 @@
-Behavioral patterns, advanced.
+Welcome to notebook five of the design patterns track. This notebook covers the remaining five behavioral patterns. State, chain of responsibility, mediator, memento, and visitor. These show up less often than the core five from notebook four, but each one solves a specific problem cleanly when its shape matches yours.
 
-What is covered.
+A high-level overview before we dive in. State is for objects with a clear lifecycle — order, connection, document workflow — where behaviour changes with mode. Chain of responsibility is for layered processing — middleware, validation pipelines, approval workflows. Mediator is for many-to-many coordination — you-eye dialogs, chat rooms — that would otherwise tangle into a mesh of direct references. Memento is for snapshot-based undo and rollback — the alternative to command-based undo when you would rather capture state than reverse operations. Visitor is for adding new operations to a closed class hierarchy without modifying the classes themselves. In modern languages with sealed types and pattern matching, visitor collapses to a when or match expression.
 
-This notebook covers the remaining five behavioral patterns — state, chain of responsibility, mediator, memento, and visitor. These show up less often but each one solves a sharp problem cleanly. The key skill is recognizing the shape of the problem early enough that the pattern feels obvious rather than imposed.
+A useful frame for the whole group. Each of these patterns sacrifices simplicity for a specific property — explicit state transitions, layered processing, decoupled communication, captured state, externally-extendable operations. If you do not need the property, you do not need the pattern.
+
+State.
+
+The intent is to allow an object to alter its behaviour when its internal state changes. The object will appear to change its class.
+
+State shows up in order lifecycles — draft, placed, paid, shipped, delivered. In connection states — disconnected, connecting, open, closing, closed. In document workflows — draft, review, published, archived. In game character modes — idle, running, jumping, dying. In traffic light controllers.
+
+The shape is this. The context holds a reference to a state object. Each state class implements the same interface but handles methods differently. And crucially, each state controls which states the object can transition to next. The context delegates work to the current state, which may also tell the context to change to a new state.
+
+The win over a giant if-else on a status field is two-fold. First, state transitions become explicit. Second, invalid transitions become impossible. A paid order knows that ship is valid but cancel requires a refund flow. The type system or the method dispatch enforces this. A status string in a giant if ladder enforces nothing.
+
+Python's take is a small class per state, all implementing a common protocol. The context holds the current state instance and delegates to it.
+
+Kotlin's take is a sealed interface with one object or class per state, plus a when expression for transitions. Kotlin's sealed-type exhaustiveness check catches missed states at compile time, which is a significant safety win.
+
+The notebook example walks through an order with five states. Draft, paid, shipped, refunding, and cancelled. Paying a draft transitions to paid. Shipping a paid transitions to shipped. Cancelling a draft transitions to cancelled. Cancelling a paid transitions to refunding. Cancelling a shipped throws — that operation simply is not allowed. Each state class encodes its own legal transitions and rejects the rest.
+
+Do not use state when the object has only two or three states and the transition rules are simple. A status enum plus a small if chain is clearer than five state classes. State earns its keep when transition rules are intricate, when invalid transitions need to be impossible rather than merely wrong, and when each state has substantial behaviour of its own.
+
+Chain of responsibility.
+
+The intent is to avoid coupling the sender of a request to its receiver by giving more than one object a chance to handle it. You chain the receiving objects and pass the request along the chain until an object handles it.
+
+Chain of responsibility shows up in h-t-t-p middleware — authentication, then rate limiting, then logging, then the handler. In event bubbling in the dom and you-eye frameworks. In validation pipelines. In approval workflows — junior, then manager, then director. In exception handlers. In logging frameworks where each handler attached to a logger gets the record in turn.
+
+The shape is this. Each handler has a reference to the next handler in the chain. When a request arrives, the handler either processes it and returns, or forwards it to the next handler. The sender just hands the request to the head of the chain.
+
+There are two common flavours. Pass-through, where every handler runs and each adds its own contribution before forwarding. This is typical for middleware. And first-handler-wins, where handlers check whether they can handle the request, the first that can does, and the rest are skipped. This is typical for approval workflows.
+
+Python's take is a list of callables iterated until one returns a result, or a linked list of handler objects each with a next reference. Kotlin's take is the same. Coroutine flow operators give you a more declarative pass-through chain when ordering matters.
+
+The notebook example shows both flavours. The first-handler-wins flavour is an approver chain by amount thresholds. The team lead can approve up to one thousand dollars. The manager up to ten thousand. The director up to one hundred thousand. A request for five thousand walks past the team lead, who forwards it; the manager handles it. A request for one million walks all the way through the chain and gets rejected by the terminal handler. The pass-through flavour is a middleware pipeline with authentication and logging. Each middleware runs, calls into the next, and optionally inspects or modifies the result.
+
+Do not use chain of responsibility when you know exactly which handler should run. Just call it. The pattern adds value when the choice of handler is dynamic, when handlers can be plugged in independently — middleware is the canonical example — or when the chain itself is the configuration, like an authentication pipeline or a validation rules list. The hidden cost is that a request that no one handles can silently disappear unless you add a terminal handler. Always include one.
+
+Mediator.
+
+The intent is to define an object that encapsulates how a set of objects interact. Mediator promotes loose coupling by keeping objects from referring to each other explicitly, and it lets you vary their interaction independently.
+
+Mediator shows up in you-eye dialog forms, where changing one field updates several others. In chat rooms, where users send messages to a room and the room broadcasts. In air traffic control, where aircraft do not talk to each other, they all talk to a-t-c. In event-bus libraries. In message brokers.
+
+The shape is this. Participants — sometimes called colleagues — hold a reference to the mediator but not to each other. When a colleague wants to communicate or react to something, it tells the mediator. The mediator coordinates the actual interaction, calling the right method on the right colleague.
+
+The win is structural. In a system with n colleagues that all might react to each other, the naive mesh has n-squared connections. With a mediator, each colleague has one connection — to the mediator. The mediator owns the n-squared relationship logic in one place. Adding a new colleague means updating one class instead of n.
+
+The cost is that the mediator becomes a god class as the system grows. If you find that the mediator has thousands of lines, the coordination logic probably needs to be split. Perhaps into multiple mediators by topic.
+
+The contrast with observer is important. Observer is one-to-many broadcast. The subject does not care who is listening. Mediator is coordinated many-to-many. The mediator knows the colleagues and decides who needs what.
+
+The notebook example is a chat room mediator. Alice, Bob, and Carol each hold a reference to the room. None holds references to the others. Alice sends a message — the room broadcasts to Bob and Carol. Bob whispers to Alice — the room sends the message only to Alice. Adding a new user means updating the room class to track one more colleague. The users do not need to change at all.
+
+Do not use mediator when the interaction is one-to-many broadcast — use observer for that. Do not use it when there are only two colleagues — just let them talk directly. Mediator earns its keep when several colleagues interact in patterns that would otherwise tangle into a mesh of direct references. Watch the mediator's size. If it grows past a few hundred lines, consider splitting the coordination by topic before the mediator becomes a god class.
+
+Memento.
+
+The intent is to capture and externalize an object's internal state, without violating encapsulation, so the object can be restored to that state later.
+
+Memento shows up in undo and redo systems — the snapshot-based alternative to command-based undo. In save points in games. In document checkpoints. In database transaction rollback. In time-travel debugging. In form-state restoration.
+
+The shape is this. The originator — the object whose state we want to save — creates a memento, which is an opaque snapshot of its internal state. A caretaker — often a history stack — holds the mementos but does not inspect them. To restore, the caretaker hands a memento back to the originator, which uses it to reset itself.
+
+A clean comparison between memento and command-based undo. Command records the operations. Undo means reversing each operation. Cheap for small operations, expensive for sweeping changes. Memento records the state. Undo means restoring a snapshot. Cheap to apply, expensive in memory if snapshots are large. Pick command when operations are localized — text insertions, single-field edits. Pick memento when changes are sweeping and snapshots are small — a form's field map, a game's player state. Many real systems combine both.
+
+Python's take is a snapshot via the copy module's deepcopy function for mutable state, or via the dataclass module's replace function for immutable state. Either way the originator creates the memento, and the caretaker holds it.
+
+Kotlin's take is an immutable data class as the memento. The copy method on a data class snapshots state. Restoring is just reassigning a field. The pattern is largely invisible at the call site.
+
+The notebook example is a text editor with snapshot-based undo. The editor has text, cursor position, and an optional selection range. The snapshot method bundles all three into an immutable editor memento. The restore method takes a memento back and resets the fields. The history class wraps a stack of mementos. You save before each edit. You undo by popping the top memento and restoring it.
+
+Do not use memento when the state is huge — a buffer of millions of objects — because snapshotting after every operation will exhaust memory fast. Either move to command-based undo, which records only the diff, or use a copy-on-write data structure that shares unchanged subtrees between snapshots. Memento is also overkill when the object has only one or two fields you would want to restore. Just save them directly.
+
+Visitor.
+
+The intent is to represent an operation to be performed on the elements of an object structure. Visitor lets you define a new operation without changing the classes of the elements on which it operates.
+
+Visitor shows up in abstract syntax tree traversal — type checking, pretty printing, evaluation, and compilation are each separate visitors on the same tree. In document processing, where a single document tree has separate visitors for h-t-m-l export, p-d-f export, and word-count. In game scene graphs.
+
+The classical motivation is this. You have a closed class hierarchy — the node types — and an open set of operations. Every new analysis is a new operation. Adding a new operation by adding methods to every node class is intrusive. Every operation touches every class. Visitor flips it. Each operation is one class with one method per node type. Adding a new operation is one new class. Adding a new node type forces every visitor to handle it.
+
+The trade-off is captured in a single sentence. Methods on the node classes — adding new operations is hard, adding new node types is easy. Visitor — adding new operations is easy, adding new node types is hard. Pick based on which axis is more likely to change in your system.
+
+Python's take is a visitor class with visit-node-type methods, dispatched on the node's class. The functools single-dispatch decorator gives you the same shape with much less boilerplate. The notebook uses it.
+
+Kotlin's take is a sealed class for the node hierarchy plus a when expression on the node type. The compiler enforces exhaustiveness. Add a new node type, and every when expression becomes a compile error until you handle it. This is arguably a better answer than the classical visitor structure.
+
+The notebook example is a tiny arithmetic abstract syntax tree with three node types — num, add, and mul. Visitor one is evaluate. It returns the value of a num, the sum of two evaluated children for an add, and the product for a mul. Visitor two is pretty-print. It renders a num as its digits, and add and mul as parenthesized infix expressions. Adding a third visitor — say, count-leaves — is one new function with three node-type cases. The node classes themselves never change.
+
+Do not use visitor when the node hierarchy is not closed. Every new node type forces you to update every existing visitor. Visitor only earns its keep when the set of types is stable and the set of operations is growing. In modern languages with sealed types and pattern matching — Kotlin's sealed plus when, Python's match, Rust's enum plus match, Scala's case classes — the structural ceremony of a classical visitor disappears. You get the same exhaustiveness guarantee from the compiler without the double-dispatch boilerplate.
+
+Picking the right advanced behavioral pattern.
+
+A short decision guide. My object has a clear lifecycle with distinct modes and rules about transitions — state. I have a layered pipeline of handlers, and either every layer runs or the first match wins — chain of responsibility. Many objects need to coordinate, and direct connections would form a mesh — mediator. I need snapshot-based undo or rollback — memento. My class hierarchy is closed but I keep adding new operations on it — visitor.
+
+A short note on the language collapses for this group. Visitor dissolves into sealed types plus when, match, or pattern matching in modern languages. The intent still matters. The double-dispatch boilerplate goes away. Memento dissolves into immutable data classes with a copy method. The snapshot is the data class itself. The caretaker is a list. State, mediator, and chain of responsibility still benefit from explicit structure even in modern languages. The patterns name something the language does not already give you.
+
+Notebook six turns to dependency injection and the enterprise patterns. The patterns that grew up around modern service-oriented code. Dependency injection and inversion of control as the foundation, then repository, unit of work, specification, and null object as the recipes that show up again and again in a typical service layer.
