@@ -1,5 +1,95 @@
-Dependency injection and enterprise patterns.
+Welcome to notebook six of the design patterns track. This notebook covers dependency injection and the enterprise patterns that grew up around modern service-oriented code. Dependency injection and inversion of control as the foundation, then repository, unit of work, specification, and null object as the recipes that show up again and again in a typical service layer.
 
-What is covered.
+The shape of modern service-layer code.
 
-This notebook covers dependency injection and the enterprise patterns that grew up around modern service-oriented code — repository, unit of work, specification, and null object. We walk through how inversion of control flips the wiring of a program, the three injection styles, and the recipes that show up again and again in a typical service layer.
+The gang of four catalog was written before web services, object-relational mappers, and dependency-injection frameworks were standard. The patterns in this notebook are the ones that grew up around modern service-oriented codebases. Most of them are applications of the gang of four patterns. Repository is a facade over data access. Specification is a strategy with composition baked in. They are framed for the specific structure of a service-and-domain layered application.
+
+A typical service-layer flow looks like this. A request arrives at a controller, whether h-t-t-p, remote procedure call, or a message from a queue. The controller calls a service, passing the request payload. The service uses one or more repositories to load entities and persists changes through a unit of work. Business rules are expressed as specifications — predicates that can be combined. Anywhere a "no value yet" or "default behaviour" would force a null check, a null object provides a no-op stand-in. The whole layer is wired with dependency injection. Each service receives its repositories, its unit of work, and its specifications through its constructor, so tests can substitute fakes for any of them.
+
+Dependency injection and inversion of control.
+
+Inversion of control is a broad principle. The framework, or the higher-level component, decides when your code runs and what it gets handed. Dependency injection is a specific technique for implementing inversion of control at the object level. Components receive their dependencies from outside, instead of constructing them.
+
+The principle behind this is the dependency inversion principle from notebook one. Depend on abstractions, not concretions. Dependency injection is the how. Instead of a user service constructing its own postgres user repo, the service accepts a user repo interface in its constructor, and the wiring code at the top of the application chooses which concrete repo to pass in.
+
+There are three injection styles. Constructor injection — pass dependencies as constructor arguments. This is the default, the safest, and the most testable. A constructed object is fully ready to use. Required dependencies cannot be missing. Setter injection — dependencies are assigned to fields after construction. This is useful when a dependency is optional, or when the framework needs to break a circular construction order. Method injection — dependencies are passed as parameters to specific methods. This is right when only one method needs the dependency, and storing it on the object would be misleading.
+
+Do you need an inversion-of-control container. A container is a framework — Spring on the java virtual machine, Guice, Dagger, Koin, the python dependency-injector library — that constructs your object graph automatically based on type declarations or configuration. Containers shine in large applications where the wiring would otherwise be hundreds of lines of construction code. In small to medium codebases, manual dependency injection — wiring up dependencies by hand in your main function or composition root — is usually clearer. Do not introduce a container reflexively because real codebases have one. Introduce one when the manual wiring is genuinely the bottleneck.
+
+The notebook example shows a welcome service that depends on a user repository and an email sender, both as protocols. Concrete implementations are an in-memory user repo and a simulated smtp email sender. The composition root, in the main function, constructs the concrete implementations and passes them to the service. The same service is also tested with a fake email sender that records what was sent. The service code does not change between production and test. Only the wiring at the edges changes.
+
+Repository.
+
+The intent is to mediate between the domain and data-mapping layers, using a collection-like interface for accessing domain objects.
+
+Repository shows up in every modern service-layer codebase. The repository hides whatever sits underneath — relational database, document store, rest ay-pee-eye, in-memory dictionary — and exposes methods that read and write domain objects. Business logic calls user-repo dot find-by-email of the address. Whether that becomes a sequel query, a get request, or a dict lookup is the repository's problem, not the business logic's.
+
+The shape is this. An interface like user-repo with methods such as find, find-by-email, add, and remove. Concrete classes — postgres user repo, rest user repo, in-memory user repo — implement the interface. Business logic depends on the interface.
+
+Three reasons this matters. Testability — swap an in-memory implementation in for tests. No database needed. Migration safety — switching from postgres to dynamo touches only the repository. Business logic does not change. Vocabulary — the repository speaks in domain terms, like find-active-subscribers, rather than in sequel, like select-star-from-users-where-status-equals-active.
+
+A useful distinction between repository and d-a-o, data access object. d-a-o is generic c-r-u-d plumbing per table. Repository is domain-shaped. The methods correspond to use cases, not to tables. Order repo dot find-pending-for-warehouse is a repository method. Order d-a-o dot find-by-status is a d-a-o method.
+
+The notebook example is an order repository with find, find-pending-for-customer, add, and update methods. The in-memory implementation backs onto a dictionary. The postgres implementation is a stub showing where the real sequel statements would go. Business logic — the total-pending function — depends on the protocol, not on either implementation. The same function works against the in-memory repo in tests and the postgres repo in production.
+
+Do not use repository when the application is small enough that the database is the model — a crud admin tool or a script. The repository's overhead — interface, two implementations, dependency wiring — is justified when you have actual business logic that should not know about persistence, and when tests would benefit from swapping in an in-memory fake.
+
+Unit of work.
+
+The intent is to maintain a list of objects affected by a business transaction, and coordinate writing out the changes and resolving concurrency problems.
+
+Unit of work shows up in every object-relational mapper. SQLAlchemy's session. Hibernate's session. Entity Framework's db context. Doctrine's entity manager. The unit of work tracks which entities were loaded, which were modified, which are new, and which are deleted. On commit, it writes all the changes in one database transaction.
+
+Why the pattern exists. Without it, business logic would have to remember to save every modified entity explicitly, ordering writes correctly, handling transaction boundaries by hand. The unit of work centralizes that bookkeeping.
+
+The shape is a unit-of-work object with methods to register new entities, mark dirty ones, mark deleted ones, plus commit and rollback. Repositories live inside the unit of work and feed it changes. Business logic talks to the repositories. The unit of work synthesizes the writes.
+
+Pairing with repository is the design intent. Repositories handle reads and tell the unit of work about writes. The two patterns are designed to work together. Repository is the read-write surface. Unit of work is the transaction boundary.
+
+The notebook example is an in-memory unit of work that tracks products. The product repository inside the unit of work hands out products and snapshots their initial values. Business logic — fulfill-order — modifies stock levels on multiple products. On a clean exit, the unit of work commits all writes and reports which products were updated. On an exception during the block, the unit of work rolls back, restoring every product to its snapshotted state. The example demonstrates both — a successful fulfillment that reduces stock, and a failed fulfillment that requests more units than are available and leaves the store unchanged.
+
+Do not use unit of work when you are not crossing a transaction boundary. A simple read-only query or a single-row write does not need it. Also do not use it when you are already using an o-r-m that provides a unit of work for you, like the SQLAlchemy session. Wrapping it in another layer is duplication. Reach for an explicit unit of work when business operations span multiple repositories and must be atomic, especially when you want the option to test with an in-memory implementation.
+
+Specification.
+
+The intent is to encapsulate business rules as predicates that can be combined and inspected.
+
+Specification shows up in complex filter logic — eligible customers equals active, and either premium or employee, and not cancelled. In validation rules. In query building. In authorization checks.
+
+The shape is this. Each rule is a small object — or a callable — with a single method that returns true or false for a candidate. Specifications support and, or, and not combinators, so you can build complex rules from simple parts.
+
+Why not just write the boolean expression directly. Three reasons. Reuse — the same predicate is used in filtering, validation, and authorization. Defining it once means changing it once. Naming — is-eligible-for-discount carries domain meaning. A multi-clause boolean expression does not. Inspection — a specification object can be introspected. Translated to sequel. Rendered for an admin you-eye. Serialized for audit. A raw lambda cannot.
+
+Python's take is a specification protocol with an is-satisfied-by method, plus combinator methods that compose two specifications into a new one. The notebook overloads the bitwise and, or, and invert operators so you can write spec-a ampersand spec-b for the and combinator, spec-a pipe spec-b for or, and tilde-spec-a for not.
+
+Kotlin's take is a fun interface with infix and and or methods, plus an operator-overloaded not. The resulting expression — is-active and parens-is-premium-or-is-employee — reads almost like natural language.
+
+The notebook example builds an eligible-for-discount specification from four leaf specifications. Is active. Is premium. Is employee. Is cancelled. The composite rule says — active, and either premium or employee, and not cancelled. The example runs it across four customers. Alice — active premium — eligible. Bob — active employee — eligible. Carol — inactive premium — not eligible. Dave — active premium cancelled — not eligible.
+
+Do not use specification when the rule is one line and appears in exactly one place. Just write the if statement. Specification earns its keep when the rule is reused across filtering, validation, and authorization. When domain names matter for readability. When you need to translate the rule into a different form — a sequel where clause, a you-eye badge, an audit log entry.
+
+Null object.
+
+The intent is to provide an object that exposes the expected interface but does nothing useful, as a stand-in for the "no value" case. The caller treats it like any other instance. No null checks required.
+
+Null object shows up as a guest user for unauthenticated requests — has the same interface as a registered user but returns sensible defaults. A no-op logger that swallows messages. An empty cart that always shows zero items. A null observer that ignores every event.
+
+The shape is straightforward. The null object implements the same interface as the real one. Every method is a no-op or returns a neutral default. Callers can substitute it for the real thing without changing their code.
+
+Python's take is a class with methods that return sensible defaults. Sometimes a module-level constant — guest equals guest-user — so callers can use is-comparison if needed.
+
+Kotlin's take is the same. Kotlin's nullable types — user-question-mark — often substitute for null object at the type level. But null object still shines when the behaviour of the null case is non-trivial. A guest user has different permissions, not no permissions.
+
+A useful distinction. Null object versus nullable types solve different problems. Nullable types make absence explicit at the type level. Callers must handle null, or the type checker complains. Null object makes absence behaviourally invisible. Callers never see it. Use nullable types when no value needs different handling. Use null object when no value maps onto a useful default behaviour.
+
+The notebook example shows a guest user and a registered user. Both expose name and a can-do-action method. The registered user checks against a permissions set. The guest user always returns true for view-public, false for everything else. A render-navbar function takes a user — either kind — and builds the navigation bar based on what the user can do. The same function call renders both a guest navbar with just a hello, and a registered admin navbar with new-post and admin links. The function does not check for null. The null object handles the case behaviourally.
+
+Do not use null object when the no-value case really needs different handling at the call site. Make absence visible with a nullable type or an optional. Null object hides the absence. If every caller has to behave differently, hiding it just pushes the special case into the null object's methods, which then has to know about every caller's needs. Use null object when the default behaviour is genuinely shared across callers.
+
+How these patterns combine.
+
+A typical service-layer method, wiring all five together. The application's composition root constructs the unit of work, all repositories, and any specifications — dependency injection. A controller calls service dot fulfill-order with a customer id and a list of items. The service uses the unit of work to load the customer through users dot find — repository. If the customer is not found, the service raises — not a null. Or it could use a null object like guest-customer if no customer maps to a valid default. The service checks eligible-for-discount dot is-satisfied-by on the customer to apply pricing rules — specification. The service modifies the customer and the order through their repositories. On success, the unit of work commits all writes in one transaction — unit of work.
+
+Every dependency in this flow is constructor-injected, so the whole service layer can be tested with in-memory repositories, an in-memory unit of work, and the same real specifications. No database. No mocks of the service itself. The patterns reinforce each other.
+
+Notebook seven closes the series with anti-patterns and pattern selection. The common ways patterns fail in practice — god classes, singleton abuse, anemic domain models, pattern fever — and a decision guide for choosing patterns based on the smell that has actually appeared, rather than on speculation about what might one day be useful.
